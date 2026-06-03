@@ -6,30 +6,33 @@ An end-to-end AI-powered Store Intelligence System built from raw CCTV footage. 
 ---
 
 ## 🏗️ Architecture Overview
-CCTV Videos (MP4)
-│
-▼
-┌─────────────────────┐
-│   YOLOv8n Detection  │  ← Person detection (class=0)
-│   + ByteTrack        │  ← Multi-object tracking across frames
-└─────────┬───────────┘
-│
-▼
-┌─────────────────────┐
-│   Event Generator    │  ← Entry/Exit, Zone, Queue, Anomaly events
-│   (pipeline.py)      │  ← Matches production JSONL schema exactly
-└─────────┬───────────┘
-│
-▼
-┌─────────────────────┐
-│   SQLite Database    │  ← 4 tables: person_events, zone_events,
-│   (events.db)        │    queue_events, anomaly_events
-└─────────┬───────────┘
-│
-┌──┴──┐
-▼     ▼
-FastAPI   Streamlit
-APIs     Dashboard
+
+This project is an end-to-end, extensible pipeline for deriving analytics events from CCTV footage. The design balances simplicity for local experimentation (single-node, file-based ingestion) with clear upgrade paths to a production streaming architecture.
+
+- **Ingestion**: Video sources are local MP4 files (data/) for experiments. The same design supports RTSP streams or cloud object storage by replacing the ingestion adapter.
+
+- **Detection & Tracking**: YOLOv8 (lightweight `yolov8n`) performs per-frame person detection; ByteTrack (via Ultralytics tracking) maintains stable track IDs across frames for grouping and temporal reasoning.
+
+- **Event Generator (pipeline.py)**: Processes sampled frames (configurable sampling rate), converts tracked trajectories into structured events: entry/exit, zone_entered/zone_exited, queue events, and anomalies. Events conform to a JSONL-friendly schema for downstream consumers.
+
+- **Storage**: Development default is SQLite (`events.db`) with normalized tables (`person_events`, `zone_events`, `queue_events`, `anomaly_events`). For production, swap to PostgreSQL (time-series extensions like TimescaleDB recommended) with an ingestion layer writing to a message bus.
+
+- **API & Dashboard**: `api/main.py` (FastAPI) exposes read-side endpoints for summary, zone heatmaps, queues and anomalies. `dashboard/app.py` (Streamlit) provides an interactive visualization layer and ad-hoc exploration.
+
+- **Observability & Ops**: Logs (structured JSON) and metrics (Prometheus-compatible counters/histograms) should be added for production monitoring. Health checks and graceful shutdown are provided by the FastAPI/uvicorn stack.
+
+- **Security & Privacy**: The pipeline minimizes PII by storing anonymized identifiers (id_token) and avoiding raw face images. For deployments handling sensitive video, use encrypted storage, access control, and on-edge processing to avoid transmitting raw video.
+
+- **Scaling Roadmap**:
+  - Short-term: run multiple pipeline workers in parallel across different stores or video partitions.
+  - Medium-term: decouple ingestion and processing via a message bus (Kafka) and convert the pipeline to stream processors (Flink/Beam or async workers) for near-real-time ingestion.
+  - Long-term: move tracking & re-identification to specialized microservices (GPU-backed) and centralize event storage in Postgres+TimescaleDB or a cloud time-series DB.
+
+- **Key trade-offs**:
+  - CPU-first design (YOLOv8n, frame sampling) for fast local runs vs. larger models for accuracy in a GPU environment.
+  - Batch/offline processing simplifies correctness; streaming improves latency at the cost of complexity.
+
+This README focuses on the local developer flow; see the Production Roadmap for recommended changes to scale and harden the system.
 
 ---
 
